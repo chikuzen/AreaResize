@@ -32,6 +32,18 @@ struct params {
     int den_v;
 };
 
+typedef struct {
+    int blue;
+    int green;
+    int red;
+} i_rgb24_t;
+
+typedef struct {
+    BYTE blue;
+    BYTE green;
+    BYTE red;
+} rgb24_t;
+
 class AreaResize : public GenericVideoFilter {
 
     static const int num_plane = 3;
@@ -45,8 +57,12 @@ class AreaResize : public GenericVideoFilter {
         return m == 0 ? y : gcd(y, m);
     }
 
-    bool ResizeHorizontal(const BYTE* srcp, int src_pitch, int plane);
-    bool ResizeVertical(BYTE* dstp, int dst_pitch, const BYTE* srcp, int src_pitch, int plane);
+    PVideoFrame GetPlanarFrame(PVideoFrame src, int n, IScriptEnvironment* env);
+    PVideoFrame GetPackedFrame(PVideoFrame src, int n, IScriptEnvironment* env);
+     bool ResizeHorizontal(const BYTE* srcp, int src_pitch, int plane);
+     bool ResizeVertical(BYTE* dstp, int dst_pitch, const BYTE* srcp, int src_pitch, int plane);
+    bool ResizeHorizontalRGB(const BYTE* srcp, int src_pitch);
+    bool ResizeVerticalRGB(BYTE* dstp, int dst_pitch, const BYTE* srcp, int src_pitch);
 
 public:
     AreaResize(PClip _child, int target_width, int target_height, IScriptEnvironment* env);
@@ -58,7 +74,7 @@ AreaResize::AreaResize(PClip _child, int target_width, int target_height, IScrip
 {
     buff = NULL;
     if (target_width != vi.width) {
-        buff = (BYTE *)malloc(target_width * vi.height);
+        buff = (BYTE *)malloc(target_width * vi.height * (vi.IsRGB24() ? 3 :1));
         if (!buff) {
             env->ThrowError("AreaResize: out of memory");
         }
@@ -84,20 +100,15 @@ AreaResize::AreaResize(PClip _child, int target_width, int target_height, IScrip
     }
 }
 
-AreaResize::~AreaResize() {
+AreaResize::~AreaResize()
+{
     if (buff) {
         free(buff);
     }
 }
 
-PVideoFrame __stdcall AreaResize::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame AreaResize::GetPlanarFrame(PVideoFrame src, int n, IScriptEnvironment* env)
 {
-    PVideoFrame src = child->GetFrame(n, env);
-    if (params[0].src_width == params[0].target_width &&
-        params[0].src_height == params[0].target_height) {
-        return src;
-    }
-
     PVideoFrame dst = env->NewVideoFrame(vi);
 
     int plane[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
@@ -130,6 +141,48 @@ PVideoFrame __stdcall AreaResize::GetFrame(int n, IScriptEnvironment* env)
     }
     
     return dst;
+}
+
+PVideoFrame AreaResize::GetPackedFrame(PVideoFrame src, int n, IScriptEnvironment* env)
+{
+    PVideoFrame dst = env->NewVideoFrame(vi);
+    const BYTE* srcp = src->GetReadPtr();
+    int src_pitch = src->GetPitch();
+
+    const BYTE* resized_h;
+    if (params[0].src_width == params[0].target_width) {
+        resized_h = srcp;
+    } else {
+        if (!ResizeHorizontalRGB(srcp, src_pitch)) {
+            env->ThrowError("AreaResize: out of memory");
+        }
+        resized_h = buff;
+        src_pitch = params[0].target_width;
+    }
+
+    BYTE* dstp = dst->GetWritePtr();
+    int dst_pitch = dst->GetPitch();
+    if (params[0].src_height == params[0].target_height) {
+        env->BitBlt(dstp, dst_pitch, resized_h, src_pitch, params[0].target_width, params[0].target_height);
+    } else if (!ResizeVerticalRGB(dstp, dst_pitch, resized_h, src_pitch)) {
+        env->ThrowError("AreaResize: out of memory");
+    }
+
+    return dst;
+}
+
+PVideoFrame __stdcall AreaResize::GetFrame(int n, IScriptEnvironment* env)
+{
+    PVideoFrame src = child->GetFrame(n, env);
+    if (params[0].src_width == params[0].target_width &&
+        params[0].src_height == params[0].target_height) {
+        return src;
+    }
+
+    if (vi.IsPlanar()) {
+        return GetPlanarFrame(src, n, env);
+    }
+    return GetPackedFrame(src, n, env);
 }
 
 bool AreaResize::ResizeHorizontal(const BYTE* srcp, int src_pitch, int plane)
@@ -217,6 +270,102 @@ bool AreaResize::ResizeVertical(BYTE* dstp, int dst_pitch, const BYTE* srcp, int
     return true;
 }
 
+bool AreaResize::ResizeHorizontalRGB(const BYTE* srcp, int src_pitch)
+{
+    rgb24_t* buff = reinterpret_cast<rgb24_t*>(this->buff);
+    int src_height = params[0].src_height;
+    int target_width = params[0].target_width;
+    int num = params[0].num_h;
+    int den = params[0].den_h;
+    i_rgb24_t* value = (i_rgb24_t*)malloc(sizeof(i_rgb24_t) * target_width);
+    if (!value) {
+        return false;
+    }
+
+    for (int y = 0; y < src_height; y++) {
+        int index_src = 0;
+        int index_dst = 0;
+        int count_num = 0;
+        int count_den = 0;
+        const rgb24_t* rgbp = reinterpret_cast<rgb24_t*>(const_cast<BYTE*>(srcp));
+        while (index_dst < target_width) {
+            value[index_dst].blue = 0;
+            value[index_dst].green = 0;
+            value[index_dst].red = 0;
+            while (1) {
+                value[index_dst].blue += rgbp[index_src].blue;
+                value[index_dst].green += rgbp[index_src].green;
+                value[index_dst].red += rgbp[index_src].red;
+                if (++count_num == num) {
+                    count_num = 0;
+                    index_src++;
+                }
+                if (++count_den == den) {
+                    count_den = 0;
+                    index_dst++;
+                    break;
+                }
+            }
+        }
+        for (int i = 0; i < target_width; i++) {
+            buff[i].blue = (BYTE)(value[i].blue / den);
+            buff[i].green = (BYTE)(value[i].green / den);
+            buff[i].red = (BYTE)(value[i].red / den);
+        }
+        srcp += src_pitch;
+        buff += target_width;
+    }
+    return true;
+}
+
+bool AreaResize::ResizeVerticalRGB(BYTE* dstp, int dst_pitch, const BYTE* srcp, int src_pitch)
+{
+    int src_width = params[0].target_width;
+    int target_height = params[0].target_height;
+    int num = params[0].num_v;
+    int den = params[0].den_v;
+    const rgb24_t* src_rgbp = reinterpret_cast<rgb24_t*>(const_cast<BYTE*>(srcp));
+    i_rgb24_t* value = (i_rgb24_t *)malloc(sizeof(i_rgb24_t) * target_height);
+    if (!value) {
+        return false;
+    }
+
+    for (int x = 0; x < src_width; x++) {
+        int index_src = 0;
+        int index_dst = 0;
+        int count_num = 0;
+        int count_den = 0;
+        while (index_dst < target_height) {
+            value[index_dst].blue = 0;
+            value[index_dst].green = 0;
+            value[index_dst].red = 0;
+            while(1) {
+                value[index_dst].blue += src_rgbp[index_src].blue;
+                value[index_dst].green += src_rgbp[index_src].green;
+                value[index_dst].red += src_rgbp[index_src].red;
+                if (++count_num == num) {
+                    count_num = 0;
+                    index_src += src_pitch;
+                }
+                if (++count_den == den) {
+                    count_den = 0;
+                    index_dst++;
+                    break;
+                }
+            }
+        }
+        for (int i = 0; i < target_height; i++) {
+            dstp[i * dst_pitch] = (BYTE)(value[i].blue / den);
+            dstp[i * dst_pitch + 1] = (BYTE)(value[i].green / den);
+            dstp[i * dst_pitch + 2] = (BYTE)(value[i].red / den);
+        }
+        src_rgbp++;
+        dstp += 3;
+    }
+    free(value);
+    return true;
+}
+
 AVSValue __cdecl CreateAreaResize(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
     PClip clip = args[0].AsClip();
@@ -228,9 +377,6 @@ AVSValue __cdecl CreateAreaResize(AVSValue args, void* user_data, IScriptEnviron
     }
 
     const VideoInfo& vi = clip->GetVideoInfo();
-    if (!vi.IsPlanar()) {
-        env->ThrowError("AreaResize: This filter is only for planar format.");
-    }
     if (vi.IsYV411() && target_width & 3) {
         env->ThrowError("AreaResize: Target width requires mod 4.");
     }
