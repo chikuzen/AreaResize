@@ -72,21 +72,14 @@ static bool ResizeHorizontalPlanar(BYTE* dstp, const BYTE* srcp, int src_pitch, 
 
     for (int y = 0; y < src_height; y++) {
         int index_src = 0;
-        int index_dst = 0;
         int count_num = 0;
-        int count_den = 0;
-        while (index_dst < target_width) {
-            value[index_dst] = 0;
-            while (1) {
-                value[index_dst] += srcp[index_src];
+        for (int index_value = 0; index_value < target_width; index_value++) {
+            value[index_value] = 0;
+            for (int count_den = 0; count_den < den; count_den++) {
+                value[index_value] += srcp[index_src];
                 if (++count_num == num) {
                     count_num = 0;
                     index_src++;
-                }
-                if (++count_den == den) {
-                    count_den = 0;
-                    index_dst++;
-                    break;
                 }
             }
         }
@@ -114,21 +107,14 @@ static bool ResizeVerticalPlanar(BYTE* dstp, int dst_pitch, const BYTE* srcp, in
 
     for (int x = 0; x < src_width; x++) {
         int index_src = 0;
-        int index_dst = 0;
         int count_num = 0;
-        int count_den = 0;
-        while (index_dst < target_height) {
-            value[index_dst] = 0;
-            while(1) {
-                value[index_dst] += srcp[index_src];
+        for (int index_value = 0; index_value < target_height; index_value++) {
+            value[index_value] = 0;
+            for (int count_den = 0; count_den < den; count_den++) {
+                value[index_value] += srcp[index_src];
                 if (++count_num == num) {
                     count_num = 0;
                     index_src += src_pitch;
-                }
-                if (++count_den == den) {
-                    count_den = 0;
-                    index_dst++;
-                    break;
                 }
             }
         }
@@ -183,13 +169,14 @@ static bool ResizeHorizontalRGB32(BYTE* dstp, const BYTE* srcp, int src_pitch, p
         srcp += src_pitch;
         buff += target_width;
     }
+    free(value);
     return true;
 }
 
 static bool ResizeVerticalRGB32(BYTE* dstp, int dst_pitch, const BYTE* srcp, int src_pitch, params_t* params)
 {
     int src_width = params->target_width;
-    int target_height = params->target_height;
+    int const target_height = params->target_height;
     int num = params->num_v;
     int den = params->den_v;
     i_rgb32_t* value = (i_rgb32_t *)malloc(sizeof(i_rgb32_t) * target_height);
@@ -274,6 +261,7 @@ static bool ResizeHorizontalRGB24(BYTE* dstp, const BYTE* srcp, int src_pitch, p
         srcp += src_pitch;
         buff += target_width;
     }
+    free(value);
     return true;
 }
 
@@ -322,18 +310,18 @@ static bool ResizeVerticalRGB24(BYTE* dstp, int dst_pitch, const BYTE* srcp, int
     return true;
 }
 
+static int gcd(int x, int y)
+{
+    int m = x % y;
+    return m == 0 ? y : gcd(y, m);
+}
+
 class AreaResize : public GenericVideoFilter {
 
     static const int num_plane = 3;
     params_t params[num_plane];
 
     BYTE* buff;
-
-    int gcd(int x, int y)
-    {
-        int m = x % y;
-        return m == 0 ? y : gcd(y, m);
-    }
 
     bool (*ResizeHorizontal)(BYTE*, const BYTE*, int, params_t*);
     bool (*ResizeVertical)(BYTE*, int, const BYTE*, int, params_t*);
@@ -354,17 +342,6 @@ AreaResize::AreaResize(PClip _child, int target_width, int target_height, IScrip
         }
     }
 
-    if (vi.IsRGB32()) {
-        ResizeHorizontal = ResizeHorizontalRGB32;
-        ResizeVertical = ResizeVerticalRGB32;
-    } else if (vi.IsRGB24()) {
-        ResizeHorizontal = ResizeHorizontalRGB24;
-        ResizeVertical = ResizeVerticalRGB24;
-    } else {
-        ResizeHorizontal = ResizeHorizontalPlanar;
-        ResizeVertical = ResizeVerticalPlanar;
-    }
-
     for (int i = 0; i < num_plane; i++) {
         params[i].src_width     = i ? vi.width / vi.SubsampleH() : vi.width;
         params[i].src_height    = i ? vi.height / vi.SubsampleV() : vi.height;
@@ -382,6 +359,17 @@ AreaResize::AreaResize(PClip _child, int target_width, int target_height, IScrip
         params[i].den_h = params[i].src_width / gcd_h;
         params[i].num_v = params[i].target_height / gcd_v;
         params[i].den_v = params[i].src_height / gcd_v;
+    }
+
+    if (vi.IsRGB32()) {
+        ResizeHorizontal = ResizeHorizontalRGB32;
+        ResizeVertical = ResizeVerticalRGB32;
+    } else if (vi.IsRGB24()) {
+        ResizeHorizontal = ResizeHorizontalRGB24;
+        ResizeVertical = ResizeVerticalRGB24;
+    } else {
+        ResizeHorizontal = ResizeHorizontalPlanar;
+        ResizeVertical = ResizeVerticalPlanar;
     }
 }
 
@@ -404,7 +392,6 @@ PVideoFrame AreaResize::GetFrame(int n, IScriptEnvironment* env)
 
     int plane[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
     for (int i = 0, time = vi.IsInterleaved() ? 1 : 3; i < time; i++) {
-
         const BYTE* srcp = src->GetReadPtr(plane[i]);
         int src_pitch = src->GetPitch(plane[i]);
 
@@ -413,7 +400,7 @@ PVideoFrame AreaResize::GetFrame(int n, IScriptEnvironment* env)
             resized_h = srcp;
         } else {
             if (!ResizeHorizontal(buff, srcp, src_pitch, &params[i])) {
-                env->ThrowError("AreaResize: out of memory");
+                return dst;
             }
             resized_h = buff;
             src_pitch = dst->GetRowSize(plane[i]);
@@ -427,10 +414,10 @@ PVideoFrame AreaResize::GetFrame(int n, IScriptEnvironment* env)
         }
 
         if (!ResizeVertical(dstp, dst_pitch, resized_h, src_pitch, &params[i])) {
-            env->ThrowError("AreaResize: out of memory");
+            return dst;
         }
     }
-    
+
     return dst;
 }
 

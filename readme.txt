@@ -19,16 +19,19 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 What's this?
 	an area-average resizer plugin for avisynth
-	
-	
+
+
 How to use?
-	
+
 	LoadPlugin("AreaResize.dll")
 	AVISource("video.avi")
 	AreaResize(int target_width, int target_height)
-	
-	
+
+
 requirement
 	WindowsXPSP3/Vista/7
 	AviSynth2.58 or 2.6x
 	Microsoft Visual C++ 2010 Redistributable Package
+
+sourcecode
+	https://github.com/chikuzen/AreaResize
