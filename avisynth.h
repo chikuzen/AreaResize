@@ -208,6 +208,7 @@ struct VideoInfo {
   bool IsColorSpace(int c_space) const { return ((pixel_type & c_space) == c_space); }
   bool Is(int property) const { return ((pixel_type & property)==property ); }
   bool IsPlanar() const { return !!(pixel_type & CS_PLANAR); }
+  bool IsInterleaved() const { return !!(pixel_type & CS_INTERLEAVED); }
   bool IsFieldBased() const { return !!(image_type & IT_FIELDBASED); }
   bool IsParityKnown() const { return ((image_type & IT_FIELDBASED)&&(image_type & (IT_BFF||IT_TFF))); }
   bool IsBFF() const { return !!(image_type & IT_BFF); }
