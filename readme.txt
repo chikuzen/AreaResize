@@ -27,6 +27,9 @@ How to use?
 	AVISource("video.avi")
 	AreaResize(int target_width, int target_height)
 
+	note: This filter is only for down scale.
+	      supported colorspaces are YV12/YV16/YV24/YV411/Y8/RGB24/RGB32.
+	      (YUY2 is unsupported. Use YV16)
 
 requirement
 	WindowsXPSP3/Vista/7
