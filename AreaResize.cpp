@@ -70,9 +70,8 @@ static bool ResizeHorizontalPlanar(BYTE* dstp, const BYTE* srcp, int src_pitch, 
         return false;
     }
 
-    for (int y = 0; y < src_height; y++) {
+    for (int y = 0, count_num = 0; y < src_height; y++) {
         int index_src = 0;
-        int count_num = 0;
         for (int index_value = 0; index_value < target_width; index_value++) {
             value[index_value] = 0;
             for (int count_den = 0; count_den < den; count_den++) {
@@ -105,9 +104,8 @@ static bool ResizeVerticalPlanar(BYTE* dstp, int dst_pitch, const BYTE* srcp, in
         return false;
     }
 
-    for (int x = 0; x < src_width; x++) {
+    for (int x = 0, count_num = 0; x < src_width; x++) {
         int index_src = 0;
-        int count_num = 0;
         for (int index_value = 0; index_value < target_height; index_value++) {
             value[index_value] = 0;
             for (int count_den = 0; count_den < den; count_den++) {
@@ -140,9 +138,8 @@ static bool ResizeHorizontalRGB32(BYTE* dstp, const BYTE* srcp, int src_pitch, p
         return false;
     }
 
-    for (int y = 0; y < src_height; y++) {
+    for (int y = 0, count_num = 0; y < src_height; y++) {
         int index_src = 0;
-        int count_num = 0;
         const rgb32_t* rgbp = reinterpret_cast<rgb32_t*>(const_cast<BYTE*>(srcp));
         for (int index_value = 0; index_value < target_width; index_value++) {
             value[index_value].blue = 0;
@@ -184,12 +181,11 @@ static bool ResizeVerticalRGB32(BYTE* dstp, int dst_pitch, const BYTE* srcp, int
         return false;
     }
 
-    for (int x = 0; x < src_width; x++) {
+    for (int x = 0, count_num = 0; x < src_width; x++) {
         int index_src_b = 0;
         int index_src_g = 1;
         int index_src_r = 2;
-        int index_src_a = 3; 
-        int count_num = 0;
+        int index_src_a = 3;
         for (int index_value = 0; index_value < target_height; index_value++) {
             value[index_value].blue = 0;
             value[index_value].green = 0;
@@ -235,9 +231,8 @@ static bool ResizeHorizontalRGB24(BYTE* dstp, const BYTE* srcp, int src_pitch, p
         return false;
     }
 
-    for (int y = 0; y < src_height; y++) {
+    for (int y = 0, count_num = 0; y < src_height; y++) {
         int index_src = 0;
-        int count_num = 0;
         const rgb24_t* rgbp = reinterpret_cast<rgb24_t*>(const_cast<BYTE*>(srcp));
         for (int index_value = 0; index_value < target_width; index_value++) {
             value[index_value].blue = 0;
@@ -276,11 +271,10 @@ static bool ResizeVerticalRGB24(BYTE* dstp, int dst_pitch, const BYTE* srcp, int
         return false;
     }
 
-    for (int x = 0; x < src_width; x++) {
+    for (int x = 0, count_num = 0; x < src_width; x++) {
         int index_src_b = 0;
         int index_src_g = 1;
         int index_src_r = 2;
-        int count_num = 0;
         for (int index_value = 0; index_value < target_height; index_value++) {
             value[index_value].blue = 0;
             value[index_value].green = 0;
@@ -428,7 +422,7 @@ AVSValue __cdecl CreateAreaResize(AVSValue args, void* user_data, IScriptEnviron
     int target_height = args[2].AsInt();
 
     if (target_width < 1 || target_height < 1) {
-        env->ThrowError("target width/height must be 1 or higher.");
+        env->ThrowError("AreaResize: target width/height must be 1 or higher.");
     }
 
     const VideoInfo& vi = clip->GetVideoInfo();
